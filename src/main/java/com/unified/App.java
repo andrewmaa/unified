@@ -15,7 +15,6 @@ import com.sun.net.httpserver.HttpExchange;
  * Main application class for the Unified messaging system.
  * Acts as the entry point and coordinator for the whole application.
  * 
- * 为了兼容 Cloud Run 健康检查，启动时会开启一个 HTTP 服务监听 PORT 环境变量指定的端口。
  */
 public class App {
     private static final Scanner scanner = new Scanner(System.in);
