@@ -6,11 +6,16 @@ import com.unified.util.PasswordManager;
 import java.util.*;
 import java.io.*;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
-
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
 /**
  * Main application class for the Unified messaging system.
  * Acts as the entry point and coordinator for the whole application.
@@ -24,7 +29,7 @@ public class App {
     private static boolean isRunning = true;
 
     public static void main(String[] args) throws IOException {
-        // —— HTTP 健康检查服务 —— 
+        
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", new HttpHandler() {
@@ -41,7 +46,7 @@ public class App {
         server.start();
         System.out.println("📡 HTTP health-check server started on port " + port);
 
-        // —— 原有控制台应用逻辑 —— 
+        
         System.out.println("=== Welcome to Unified - University Messaging System ===");
         while (isRunning) {
             if (currentUser == null) {
@@ -53,6 +58,26 @@ public class App {
         System.out.println("Thank you for using Unified!");
         scanner.close();
     }
+    private static void loadUsers() {
+        Path path = Paths.get("users.json");
+        if (Files.exists(path)) {
+            try {
+                String json = Files.readString(path);
+                Type t = new TypeToken<Map<String, User>>(){}.getType();
+                users = new Gson().fromJson(json, t);
+            } catch (IOException e) {
+                System.err.println("Failed to load users.json. An empty user list was used at startup.");
+            }
+        }
+    }
+    
+
+    private static final String USER_STORE = "users.json";
+
+    private static void saveUsers() throws IOException {
+        String json = new Gson().toJson(users);
+        Files.writeString(Paths.get(USER_STORE), json);
+}
 
     private static void showLoginMenu() {
         System.out.println("\n=== Login Menu ===");
@@ -118,11 +143,12 @@ public class App {
     private static void register() {
         System.out.print("Enter username: ");
         String username = scanner.nextLine();
+        
         if (findUserByUsername(username) != null) {
             System.out.println("Username already exists.");
             return;
         }
-
+    
         System.out.print("Enter full name: ");
         String fullName = scanner.nextLine();
         System.out.print("Enter email: ");
@@ -131,13 +157,22 @@ public class App {
         String password = scanner.nextLine();
         System.out.print("Enter student ID: ");
         String studentId = scanner.nextLine();
-
+    
         Student student = new Student(username, fullName, email, password, studentId);
         users.put(student.getUserId(), student);
         currentUser = student;
         currentUser.setOnline(true);
+        
+       
+        try {
+            saveUsers();
+        } catch (IOException e) {
+            System.err.println("Failed to save registration: " + e.getMessage());
+        }
+    
         System.out.println("Registration successful!");
     }
+    
 
     private static void viewMessages() {
         System.out.println("\n=== Your Messages ===");
