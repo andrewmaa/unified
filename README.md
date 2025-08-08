@@ -101,25 +101,34 @@ unified/
 
 ### Quick Start
 ```bash
-# Build the project
+# Build the project (fat JAR with all dependencies)
+mvn clean package
+
+# Run the GUI (Swing)
+java -cp target/unified-messaging-1.0.0-jar-with-dependencies.jar com.unified.client.UnifiedGUI
+
+# Run the CLI (console app)
+java -jar target/unified-messaging-1.0.0-jar-with-dependencies.jar
+```
+
+### Using helper scripts (macOS/Linux)
+```bash
+# Build
 ./build.sh
 
-# Run the application
+# Run GUI
+./run-gui.sh
+
+# Run CLI
 ./run.sh
 
-# Or run directly
-java -cp build com.unified.App
+# If needed, make scripts executable once:
+chmod +x build.sh run.sh run-gui.sh
 ```
 
-### Manual Build
-```bash
-# Compile
-cd src/main/java
-javac -d ../../../build com/unified/util/PasswordManager.java com/unified/model/*.java com/unified/App.java
-
-# Run
-java -cp build com.unified.App
-```
+### Notes
+- The packaged JAR defaults to the CLI entry point (`com.unified.App`). To launch the GUI, use the `-cp ... com.unified.client.UnifiedGUI` command or `./run-gui.sh`.
+- Requires Java 11+ and Maven 3.6+.
 ## Usage
 
 ### First Time Setup

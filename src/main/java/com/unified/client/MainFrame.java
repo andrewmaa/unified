@@ -39,10 +39,37 @@ class MainFrame extends JFrame {
     }
 
     private void buildUI() {
+        // Main split pane with modern styling
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        split.setResizeWeight(0.25);
+        split.setResizeWeight(0.28);
+        split.setDividerSize(8);
+        split.setContinuousLayout(true);
+        split.setBorder(null);
 
-        JPanel left = new JPanel(new BorderLayout(6, 6));
+        // Left panel - Channel list and controls
+        JPanel left = createLeftPanel();
+        
+        // Right panel - Chat area and input
+        JPanel right = createRightPanel();
+
+        split.setLeftComponent(left);
+        split.setRightComponent(right);
+        setContentPane(split);
+    }
+    
+    private JPanel createLeftPanel() {
+        JPanel left = new JPanel(new BorderLayout(8, 8));
+        left.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 5));
+        left.setBackground(new Color(248, 248, 248));
+        
+        // Channel list header
+        JLabel channelHeader = new JLabel("Channels");
+        channelHeader.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        channelHeader.setForeground(new Color(51, 98, 140));
+        channelHeader.setBorder(BorderFactory.createEmptyBorder(5, 8, 10, 8));
+        left.add(channelHeader, BorderLayout.NORTH);
+
+        // Enhanced channel list
         channelList.setCellRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
@@ -52,35 +79,145 @@ class MainFrame extends JFrame {
                     String name = controller.getChannelDisplayName(ch);
                     int unread = controller.getUnreadCount(ch);
                     setText(unread > 0 ? (name + "  (" + unread + ")") : name);
+                    setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                    setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+                    
+                    if (unread > 0) {
+                        setFont(new Font("Segoe UI", Font.BOLD, 13));
+                    }
                 }
                 return c;
             }
         });
-        left.add(new JScrollPane(channelList), BorderLayout.CENTER);
+        
+        JScrollPane channelScroll = new JScrollPane(channelList);
+        channelScroll.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(220, 220, 220), 1),
+            BorderFactory.createEmptyBorder(0, 0, 0, 0)
+        ));
+        channelScroll.getVerticalScrollBar().setUnitIncrement(16);
+        left.add(channelScroll, BorderLayout.CENTER);
 
-        JPanel leftBtns = new JPanel(new GridLayout(0, 1, 6, 6));
-        leftBtns.add(createBtn);
-        leftBtns.add(joinBtn);
-        leftBtns.add(searchBtn);
-        leftBtns.add(exportBtn);
-        leftBtns.add(sendFileBtn);
-        leftBtns.add(announceBtn);
-        leftBtns.add(profileBtn);
-        leftBtns.add(logoutBtn);
-        left.add(leftBtns, BorderLayout.SOUTH);
+        // Styled button panel
+        JPanel buttonPanel = createButtonPanel();
+        left.add(buttonPanel, BorderLayout.SOUTH);
+        
+        return left;
+    }
+    
+    private JPanel createButtonPanel() {
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setLayout(new BoxLayout(buttonPanel, BoxLayout.Y_AXIS));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
+        buttonPanel.setBackground(new Color(248, 248, 248));
+        
+        // Group buttons by category
+        JPanel channelOps = new JPanel(new GridLayout(2, 1, 4, 4));
+        channelOps.setBackground(new Color(248, 248, 248));
+        channelOps.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200)), "Channels"));
+        
+        styleButton(createBtn, new Color(76, 175, 80), Color.WHITE);
+        styleButton(joinBtn, new Color(33, 150, 243), Color.WHITE);
+        channelOps.add(createBtn);
+        channelOps.add(joinBtn);
+        
+        JPanel chatOps = new JPanel(new GridLayout(3, 1, 4, 4));
+        chatOps.setBackground(new Color(248, 248, 248));
+        chatOps.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200)), "Chat"));
+        
+        styleButton(searchBtn, new Color(156, 39, 176), Color.WHITE);
+        styleButton(exportBtn, new Color(255, 152, 0), Color.WHITE);
+        styleButton(sendFileBtn, new Color(96, 125, 139), Color.WHITE);
+        chatOps.add(searchBtn);
+        chatOps.add(exportBtn);
+        chatOps.add(sendFileBtn);
+        
+        JPanel userOps = new JPanel(new GridLayout(3, 1, 4, 4));
+        userOps.setBackground(new Color(248, 248, 248));
+        userOps.setBorder(BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200)), "User"));
+        
+        styleButton(announceBtn, new Color(255, 193, 7), Color.BLACK);
+        styleButton(profileBtn, new Color(158, 158, 158), Color.WHITE);
+        styleButton(logoutBtn, new Color(244, 67, 54), Color.WHITE);
+        userOps.add(announceBtn);
+        userOps.add(profileBtn);
+        userOps.add(logoutBtn);
+        
+        buttonPanel.add(channelOps);
+        buttonPanel.add(Box.createVerticalStrut(8));
+        buttonPanel.add(chatOps);
+        buttonPanel.add(Box.createVerticalStrut(8));
+        buttonPanel.add(userOps);
+        
+        return buttonPanel;
+    }
+    
+    private void styleButton(JButton button, Color bgColor, Color textColor) {
+        button.setBackground(bgColor);
+        button.setForeground(textColor);
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setOpaque(true);
+        button.setPreferredSize(new Dimension(120, 28));
+    }
+    
+    private JPanel createRightPanel() {
+        JPanel right = new JPanel(new BorderLayout(8, 8));
+        right.setBorder(BorderFactory.createEmptyBorder(10, 5, 10, 10));
+        right.setBackground(Color.WHITE);
+        
+        // Chat header
+        JLabel chatHeader = new JLabel("Messages");
+        chatHeader.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        chatHeader.setForeground(new Color(51, 98, 140));
+        chatHeader.setBorder(BorderFactory.createEmptyBorder(5, 8, 10, 8));
+        right.add(chatHeader, BorderLayout.NORTH);
 
-        JPanel right = new JPanel(new BorderLayout(6, 6));
+        // Enhanced chat area
         chatArea.setEditable(false);
-        right.add(new JScrollPane(chatArea), BorderLayout.CENTER);
+        chatArea.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        chatArea.setLineWrap(true);
+        chatArea.setWrapStyleWord(true);
+        chatArea.setBackground(new Color(250, 250, 250));
+        chatArea.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        
+        JScrollPane chatScroll = new JScrollPane(chatArea);
+        chatScroll.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(220, 220, 220), 1),
+            BorderFactory.createEmptyBorder(0, 0, 0, 0)
+        ));
+        chatScroll.getVerticalScrollBar().setUnitIncrement(16);
+        right.add(chatScroll, BorderLayout.CENTER);
 
-        JPanel inputBar = new JPanel(new BorderLayout(8, 8));
-        inputBar.add(input, BorderLayout.CENTER);
-        inputBar.add(send, BorderLayout.EAST);
-        right.add(inputBar, BorderLayout.SOUTH);
-
-        split.setLeftComponent(left);
-        split.setRightComponent(right);
-        setContentPane(split);
+        // Enhanced input area
+        JPanel inputPanel = new JPanel(new BorderLayout(8, 8));
+        inputPanel.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+        inputPanel.setBackground(Color.WHITE);
+        
+        input.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        input.setPreferredSize(new Dimension(0, 32));
+        input.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+            BorderFactory.createEmptyBorder(6, 10, 6, 10)
+        ));
+        
+        send.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        send.setPreferredSize(new Dimension(80, 32));
+        send.setBackground(new Color(51, 98, 140));
+        send.setForeground(Color.WHITE);
+        send.setFocusPainted(false);
+        send.setBorderPainted(false);
+        send.setOpaque(true);
+        
+        inputPanel.add(input, BorderLayout.CENTER);
+        inputPanel.add(send, BorderLayout.EAST);
+        right.add(inputPanel, BorderLayout.SOUTH);
+        
+        return right;
     }
 
     private void wireEvents() {
@@ -110,14 +247,30 @@ class MainFrame extends JFrame {
         if (c == null) return;
         List<Message> msgs = controller.getMessages(c);
         User cur = controller.getCurrentUser();
+        
         for (Message m : msgs) {
             boolean mine = cur != null && m.getSenderId().equals(cur.getUserId());
-            String align = mine ? "(Me)" : "";
             String name = controller.getUserDisplayName(m.getSenderId());
-            chatArea.append(String.format("[%s] %s%s: %s\n", m.getTimestamp(), name, align, m.getFormattedContent()));
+            String timestamp = m.getTimestamp().toString().replace("T", " ");
+            String content = m.getFormattedContent();
+            
+            // Format message with better visual separation
+            if (mine) {
+                chatArea.append(String.format("▶ %s (You) - %s\n", name, timestamp));
+                chatArea.append(String.format("  %s\n\n", content));
+            } else {
+                chatArea.append(String.format("◀ %s - %s\n", name, timestamp));
+                chatArea.append(String.format("  %s\n\n", content));
+            }
         }
+        
         controller.markAllRead(c);
         channelList.repaint();
+        
+        // Auto-scroll to bottom
+        SwingUtilities.invokeLater(() -> {
+            chatArea.setCaretPosition(chatArea.getDocument().getLength());
+        });
     }
 
     private void onChannelSelected(ListSelectionEvent e) {

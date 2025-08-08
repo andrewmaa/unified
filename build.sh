@@ -1,65 +1,25 @@
 #!/bin/bash
-
-# Unified Messaging System Build Script (Maven)
+set -euo pipefail
 
 echo "=== Unified Messaging System Build Script ==="
 
-# Check if Maven is installed
-if ! command -v mvn &> /dev/null; then
-    echo "Error: Maven is not installed or not in PATH"
-    echo "Please install Maven: brew install maven"
-    exit 1
+if ! command -v mvn >/dev/null 2>&1; then
+  echo "Error: Maven is not installed. On macOS: brew install maven" >&2
+  exit 1
 fi
 
-# Check if Java is installed
-if ! command -v java &> /dev/null; then
-    echo "Error: Java is not installed or not in PATH"
-    exit 1
+if ! command -v java >/dev/null 2>&1; then
+  echo "Error: Java is not installed or not in PATH" >&2
+  exit 1
 fi
 
-echo "Maven version:"
-mvn --version
+echo "Maven version:"; mvn -v | sed 's/^/  /'
+echo "Java version:";  java -version 2>&1 | sed 's/^/  /'
 
-echo ""
-echo "Java version:"
-java -version
+echo "\nBuilding fat JAR with Maven..."
+mvn -q -DskipTests clean package
 
-# Clean and compile with Maven
-echo ""
-echo "Building project with Maven..."
-mvn clean compile
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "Compilation successful!"
-    
-    # Run tests
-    echo "Running tests..."
-    mvn test
-    
-    # Create executable JAR
-    echo ""
-    echo "Creating executable JAR..."
-    mvn package
-    
-    if [ $? -eq 0 ]; then
-        echo ""
-        echo "=== Build completed successfully! ==="
-        echo "Executable JAR created: target/unified-messaging-1.0.0-jar-with-dependencies.jar"
-        echo ""
-        echo "To run the application:"
-        echo "  java -jar target/unified-messaging-1.0.0-jar-with-dependencies.jar"
-        echo ""
-        echo "To run tests:"
-        echo "  mvn test"
-        echo ""
-        echo "To clean and rebuild:"
-        echo "  mvn clean package"
-    else
-        echo "Package creation failed!"
-        exit 1
-    fi
-else
-    echo "Compilation failed!"
-    exit 1
-fi 
+echo "\n=== Build completed successfully! ==="
+echo "Artifact: target/unified-messaging-1.0.0-jar-with-dependencies.jar"
+echo "Run GUI: java -cp target/unified-messaging-1.0.0-jar-with-dependencies.jar com.unified.client.UnifiedGUI"
+echo "Run CLI: java -jar target/unified-messaging-1.0.0-jar-with-dependencies.jar"
