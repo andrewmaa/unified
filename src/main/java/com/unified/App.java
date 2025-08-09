@@ -6,6 +6,8 @@ import com.unified.util.PasswordManager;
 import java.util.*;
 import java.io.*;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -13,6 +15,7 @@ import java.nio.file.Paths;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializationContext;
@@ -21,10 +24,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
+
+import com.unified.server.CloudStore;
+
 /**
  * Main application class for the Unified messaging system.
  * Acts as the entry point and coordinator for the whole application.
- * 
  */
 public class App {
     private static final Scanner scanner = new Scanner(System.in);
@@ -33,28 +38,148 @@ public class App {
     private static Map<String, Channel> channels = new HashMap<>();
     private static boolean isRunning = true;
 
+    private static final Gson GSON = new Gson();
+    private static final Type MAP_STRING_OBJECT =
+            new TypeToken<Map<String, Object>>() {}.getType();
+
+    // DTOs for REST payloads
+    static class RegisterDto { String username, fullName, email, password, studentId; }
+    static class LoginDto    { String username, password; }
+
     public static void main(String[] args) throws IOException {
-        
-        // Load existing users from file
         loadUsers();
-        
+
+        // HTTP Server
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+        server.createContext("/api/health/firestore", ex -> {
+            if (handleCorsPreflight(ex)) return;
+            var res = CloudStore.ping();
+            writeJson(ex, res.ok ? 200 : 500, Map.of(
+                "ok", res.ok, "projectId", CloudStore.getProjectId(),
+                "id", res.id, "error", res.error
+            ));
+        });
+        
+        // Root probe endpoint
         server.createContext("/", new HttpHandler() {
             @Override
             public void handle(HttpExchange exchange) throws IOException {
-                String resp = "Unified server is running";
-                exchange.sendResponseHeaders(200, resp.getBytes().length);
+                allowCors(exchange);
+                byte[] body = "Unified server is running".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, body.length);
                 try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(resp.getBytes());
+                    os.write(body);
                 }
             }
         });
+
+        // ======== REST API ========
+
+        // POST /api/register
+        server.createContext("/api/register", ex -> {
+            if (handleCorsPreflight(ex)) return;
+            try {
+                String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                RegisterDto dto = GSON.fromJson(body, RegisterDto.class);
+
+                // Build a Student domain object (password hashing should be handled in Student/PasswordManager)
+                Student s = new Student(dto.username, dto.fullName, dto.email, dto.password, dto.studentId);
+
+                // Save locally (JSON) and to Firestore
+                users.put(s.getUserId(), s);
+                var r = CloudStore.saveUser(s);
+                if (!r.ok) {
+                    writeJson(ex, 500, Map.of("ok", false, "error", r.error));
+                    return;
+                }
+                writeJson(ex, 200, Map.of("ok", true, "userId", s.getUserId()));
+
+                try { saveUsers(); } catch (IOException ignore) {}
+
+                writeJson(ex, 200, Map.of("ok", true, "userId", s.getUserId()));
+            } catch (Exception e) {
+                writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+            }
+        });
+
+        // POST /api/login
+        server.createContext("/api/login", ex -> {
+            if (handleCorsPreflight(ex)) return;
+            try {
+                String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                LoginDto dto = GSON.fromJson(body, LoginDto.class);
+
+                // Fetch student by username from Firestore
+                Student s = CloudStore.getStudentByUsername(dto.username);
+                if (s != null && s.verifyPassword(dto.password)) {
+                    writeJson(ex, 200, Map.of("ok", true, "userId", s.getUserId(), "fullName", s.getFullName()));
+                } else {
+                    writeJson(ex, 401, Map.of("ok", false, "error", "Invalid credentials"));
+                }
+            } catch (Exception e) {
+                writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+            }
+        });
+
+        // GET /api/channels?userId=...
+        // POST /api/channels {ownerId,name,type,participants:[...],description?,maxParticipants?,isPrivate?}
+        server.createContext("/api/channels", ex -> {
+            if (handleCorsPreflight(ex)) return;
+            try {
+                if ("GET".equalsIgnoreCase(ex.getRequestMethod())) {
+                    String userId = query(ex, "userId");
+                    var list = CloudStore.listChannelsByUser(userId);
+                    writeJson(ex, 200, Map.of("ok", true, "channels", list));
+                } else if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
+                    String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    Map<String,Object> doc = GSON.fromJson(body, MAP_STRING_OBJECT);
+                    doc.putIfAbsent("participants", new ArrayList<String>());
+                    String id = CloudStore.createChannel(doc);
+                    writeJson(ex, 200, Map.of("ok", true, "channelId", id));
+                } else {
+                    writeJson(ex, 405, Map.of("ok", false, "error", "Method not allowed"));
+                }
+            } catch (Exception e) {
+                writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+            }
+        });
+
+        // GET /api/messages?channelId=...
+        // POST /api/messages {channelId,senderId,content,type?}
+        server.createContext("/api/messages", ex -> {
+            if (handleCorsPreflight(ex)) return;
+            try {
+                if ("GET".equalsIgnoreCase(ex.getRequestMethod())) {
+                    String channelId = query(ex, "channelId");
+                    var msgs = CloudStore.listMessages(channelId);
+                    writeJson(ex, 200, Map.of("ok", true, "messages", msgs));
+                } else if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
+                    String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    Map<String,Object> req = GSON.fromJson(body, MAP_STRING_OBJECT);
+
+                    String channelId = (String) req.get("channelId");
+                    Map<String,Object> msgDoc = new HashMap<>();
+                    msgDoc.put("senderId", req.get("senderId"));
+                    msgDoc.put("content",  req.get("content"));
+                    msgDoc.put("type",     req.getOrDefault("type","text"));
+
+                    String messageId = CloudStore.addMessage(channelId, msgDoc);
+                    writeJson(ex, 200, Map.of("ok", true, "messageId", messageId));
+                } else {
+                    writeJson(ex, 405, Map.of("ok", false, "error", "Method not allowed"));
+                }
+            } catch (Exception e) {
+                writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+            }
+        });
+
+        // Start server
         server.setExecutor(null);
         server.start();
-        System.out.println("📡 HTTP health-check server started on port " + port);
+        System.out.println("📡 HTTP API server started on port " + port);
 
-        
+        // CLI flow (kept for local testing)
         System.out.println("=== Welcome to Unified - University Messaging System ===");
         while (isRunning) {
             if (currentUser == null) {
@@ -66,59 +191,56 @@ public class App {
         System.out.println("Thank you for using Unified!");
         scanner.close();
     }
+
+    // ===== Persistence: local JSON (dev only) =====
+
     private static void loadUsers() {
         Path path = Paths.get("users.json");
         if (Files.exists(path)) {
             try {
-                String json = Files.readString(path);
+                String json = Files.readString(path, StandardCharsets.UTF_8);
                 Type t = new TypeToken<Map<String, User>>(){}.getType();
-                
-                // Create Gson with custom deserializer for User class
+
                 Gson gson = new GsonBuilder()
                     .registerTypeAdapter(User.class, new UserDeserializer())
                     .create();
-                
-                users = gson.fromJson(json, t);
+
+                Map<String, User> loaded = gson.fromJson(json, t);
+                if (loaded != null) users = loaded;
             } catch (IOException e) {
-                System.err.println("Failed to load users.json. An empty user list was used at startup.");
+                System.err.println("Failed to load users.json. Using empty user list.");
             }
         }
     }
-    
+
+    private static final String USER_STORE = "users.json";
+    private static void saveUsers() throws IOException {
+        String json = new Gson().toJson(users);
+        Files.writeString(Paths.get(USER_STORE), json, StandardCharsets.UTF_8);
+    }
+
     /**
-     * Custom deserializer for User class that can handle both User and Student objects
+     * Custom deserializer for User class that can handle Student objects.
+     * Assumes JSON persisted fields exist accordingly.
      */
     private static class UserDeserializer implements JsonDeserializer<User> {
         @Override
         public User deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {
-            JsonObject jsonObject = json.getAsJsonObject();
-            
-            // Check if this is a Student by looking for studentId field
-            if (jsonObject.has("studentId")) {
-                // Deserialize as Student
-                String userId = jsonObject.get("userId").getAsString();
-                String username = jsonObject.get("username").getAsString();
-                String fullName = jsonObject.get("fullName").getAsString();
-                String email = jsonObject.get("email").getAsString();
-                String hashedPassword = jsonObject.get("hashedPassword").getAsString();
-                String studentId = jsonObject.get("studentId").getAsString();
-                
+            JsonObject obj = json.getAsJsonObject();
+            if (obj.has("studentId")) {
+                String userId = obj.get("userId").getAsString();
+                String username = obj.get("username").getAsString();
+                String fullName = obj.get("fullName").getAsString();
+                String email = obj.get("email").getAsString();
+                String hashedPassword = obj.get("hashedPassword").getAsString();
+                String studentId = obj.get("studentId").getAsString();
                 return new Student(userId, username, fullName, email, hashedPassword, studentId);
-            } else {
-                // This shouldn't happen in our current implementation since we only have Students
-                // But keeping it for future extensibility
-                throw new RuntimeException("Unknown user type in JSON");
             }
+            throw new RuntimeException("Unknown user type in JSON");
         }
     }
-    
 
-    private static final String USER_STORE = "users.json";
-
-    private static void saveUsers() throws IOException {
-        String json = new Gson().toJson(users);
-        Files.writeString(Paths.get(USER_STORE), json);
-}
+    // ===== CLI UI =====
 
     private static void showLoginMenu() {
         System.out.println("\n=== Login Menu ===");
@@ -184,12 +306,10 @@ public class App {
     private static void register() {
         System.out.print("Enter username: ");
         String username = scanner.nextLine();
-        
         if (findUserByUsername(username) != null) {
             System.out.println("Username already exists.");
             return;
         }
-    
         System.out.print("Enter full name: ");
         String fullName = scanner.nextLine();
         System.out.print("Enter email: ");
@@ -198,22 +318,29 @@ public class App {
         String password = scanner.nextLine();
         System.out.print("Enter student ID: ");
         String studentId = scanner.nextLine();
-    
+
         Student student = new Student(username, fullName, email, password, studentId);
         users.put(student.getUserId(), student);
         currentUser = student;
         currentUser.setOnline(true);
-        
-       
-        try {
-            saveUsers();
-        } catch (IOException e) {
+
+        try { saveUsers(); } catch (IOException e) {
             System.err.println("Failed to save registration: " + e.getMessage());
         }
-    
+
+        // Firestore synchronize (best-effort, non-blocking for CLI UX)
+        try {
+            var r = CloudStore.saveUser(student);
+            if (!r.ok) throw new RuntimeException(r.error);
+        } catch (Exception e) {
+            System.err.println("Failed to persist to Firestore: " + e);
+            System.out.println("Registration aborted due to cloud write failure.");
+            return; // stop here so不会误导
+        }
+        
+
         System.out.println("Registration successful!");
     }
-    
 
     private static void viewMessages() {
         System.out.println("\n=== Your Messages ===");
@@ -486,8 +613,7 @@ public class App {
         System.out.println("Logged out successfully.");
     }
 
-    // —— Helper Methods —— 
-
+    // —— Helper Methods ——
     private static int getIntInput() {
         while (!scanner.hasNextInt()) {
             System.out.println("Please enter a valid number.");
@@ -532,5 +658,43 @@ public class App {
     private static String getChannelName(String channelId) {
         Channel c = channels.get(channelId);
         return c != null ? c.getChannelName() : "Unknown Channel";
+    }
+
+    private static void allowCors(HttpExchange ex) {
+        ex.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        ex.getResponseHeaders().add("Access-Control-Allow-Headers", "content-type");
+        ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    }
+
+    private static boolean handleCorsPreflight(HttpExchange ex) throws IOException {
+        if ("OPTIONS".equalsIgnoreCase(ex.getRequestMethod())) {
+            allowCors(ex);
+            ex.sendResponseHeaders(204, -1);
+            ex.close();
+            return true;
+        }
+        allowCors(ex);
+        return false;
+    }
+
+    private static void writeJson(HttpExchange ex, int code, Object obj) throws IOException {
+        byte[] out = GSON.toJson(obj).getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().add("Content-Type", "application/json; charset=UTF-8");
+        ex.sendResponseHeaders(code, out.length);
+        try (OutputStream os = ex.getResponseBody()) {
+            os.write(out);
+        }
+    }
+
+    private static String query(HttpExchange ex, String key) {
+        String q = ex.getRequestURI().getQuery();
+        if (q == null) return null;
+        for (String p : q.split("&")) {
+            String[] kv = p.split("=", 2);
+            if (kv.length == 2 && kv[0].equals(key)) {
+                return URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+            }
+        }
+        return null;
     }
 }
