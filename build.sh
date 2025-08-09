@@ -1,48 +1,25 @@
 #!/bin/bash
-
-# Unified Messaging System Build Script
+set -euo pipefail
 
 echo "=== Unified Messaging System Build Script ==="
 
-# Check if Java is installed
-if ! command -v java &> /dev/null; then
-    echo "Error: Java is not installed or not in PATH"
-    exit 1
+if ! command -v mvn >/dev/null 2>&1; then
+  echo "Error: Maven is not installed. On macOS: brew install maven" >&2
+  exit 1
 fi
 
-# Check if javac is installed
-if ! command -v javac &> /dev/null; then
-    echo "Error: Java compiler (javac) is not installed or not in PATH"
-    exit 1
+if ! command -v java >/dev/null 2>&1; then
+  echo "Error: Java is not installed or not in PATH" >&2
+  exit 1
 fi
 
-echo "Java version:"
-java -version
+echo "Maven version:"; mvn -v | sed 's/^/  /'
+echo "Java version:";  java -version 2>&1 | sed 's/^/  /'
 
-# Create build directory
-echo "Creating build directory..."
-mkdir -p build
+echo "\nBuilding fat JAR with Maven..."
+mvn -q -DskipTests clean package
 
-# Compile all Java files
-echo "Compiling Java files..."
-cd src/main/java
-javac -d ../../../build com/unified/util/PasswordManager.java com/unified/model/*.java com/unified/App.java com/unified/TestApp.java
-
-if [ $? -eq 0 ]; then
-    echo "Compilation successful!"
-    
-    # Run test
-    echo "Running basic functionality test..."
-    java -cp ../../../build com.unified.TestApp
-    
-    echo ""
-    echo "=== Build completed successfully! ==="
-    echo "To run the application:"
-    echo "  java -cp build com.unified.App"
-    echo ""
-    echo "To run the test:"
-    echo "  java -cp build com.unified.TestApp"
-else
-    echo "Compilation failed!"
-    exit 1
-fi 
+echo "\n=== Build completed successfully! ==="
+echo "Artifact: target/unified-messaging-1.0.0-jar-with-dependencies.jar"
+echo "Run GUI: java -cp target/unified-messaging-1.0.0-jar-with-dependencies.jar com.unified.client.UnifiedGUI"
+echo "Run CLI: java -jar target/unified-messaging-1.0.0-jar-with-dependencies.jar"

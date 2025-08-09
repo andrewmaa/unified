@@ -14,6 +14,11 @@ import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
 /**
@@ -29,6 +34,9 @@ public class App {
     private static boolean isRunning = true;
 
     public static void main(String[] args) throws IOException {
+        
+        // Load existing users from file
+        loadUsers();
         
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
@@ -64,9 +72,42 @@ public class App {
             try {
                 String json = Files.readString(path);
                 Type t = new TypeToken<Map<String, User>>(){}.getType();
-                users = new Gson().fromJson(json, t);
+                
+                // Create Gson with custom deserializer for User class
+                Gson gson = new GsonBuilder()
+                    .registerTypeAdapter(User.class, new UserDeserializer())
+                    .create();
+                
+                users = gson.fromJson(json, t);
             } catch (IOException e) {
                 System.err.println("Failed to load users.json. An empty user list was used at startup.");
+            }
+        }
+    }
+    
+    /**
+     * Custom deserializer for User class that can handle both User and Student objects
+     */
+    private static class UserDeserializer implements JsonDeserializer<User> {
+        @Override
+        public User deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {
+            JsonObject jsonObject = json.getAsJsonObject();
+            
+            // Check if this is a Student by looking for studentId field
+            if (jsonObject.has("studentId")) {
+                // Deserialize as Student
+                String userId = jsonObject.get("userId").getAsString();
+                String username = jsonObject.get("username").getAsString();
+                String fullName = jsonObject.get("fullName").getAsString();
+                String email = jsonObject.get("email").getAsString();
+                String hashedPassword = jsonObject.get("hashedPassword").getAsString();
+                String studentId = jsonObject.get("studentId").getAsString();
+                
+                return new Student(userId, username, fullName, email, hashedPassword, studentId);
+            } else {
+                // This shouldn't happen in our current implementation since we only have Students
+                // But keeping it for future extensibility
+                throw new RuntimeException("Unknown user type in JSON");
             }
         }
     }
