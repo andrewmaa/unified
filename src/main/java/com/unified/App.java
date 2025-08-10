@@ -124,30 +124,69 @@ public class App {
 
         // GET /api/channels?userId=...
         // POST /api/channels {ownerId,name,type,participants:[...],description?,maxParticipants?,isPrivate?}
-        server.createContext("/api/channels", ex -> {
-            if (handleCorsPreflight(ex)) return;
-            try {
-                if ("GET".equalsIgnoreCase(ex.getRequestMethod())) {
-                    String userId = query(ex, "userId");
-                    var list = CloudStore.listChannelsByUser(userId);
-                    writeJson(ex, 200, Map.of("ok", true, "channels", list));
-                } else if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
-                    String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-                    Map<String,Object> doc = GSON.fromJson(body, MAP_STRING_OBJECT);
-                    doc.putIfAbsent("participants", new ArrayList<String>());
-                    String id = CloudStore.createChannel(doc);
-                    writeJson(ex, 200, Map.of("ok", true, "channelId", id));
-                } else {
-                    writeJson(ex, 405, Map.of("ok", false, "error", "Method not allowed"));
-                }
-            } catch (Exception e) {
-                writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+        
+server.createContext("/api/channels", ex -> {
+    if (handleCorsPreflight(ex)) return;
+    try {
+        if ("GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            String name   = query(ex, "name");
+            String prefix = query(ex, "prefix");
+            String userId = query(ex, "userId");
+
+            if (name != null) {
+                var ch = CloudStore.findChannelByExactName(name);
+                writeJson(ex, 200, Map.of("ok", true, "channel", ch));
+                return;
             }
-        });
+            if (prefix != null) {
+                var list = CloudStore.searchChannelsByPrefix(prefix);
+                writeJson(ex, 200, Map.of("ok", true, "channels", list));
+                return;
+            }
+            if (userId != null) {
+                var list = CloudStore.listChannelsByUser(userId);
+                writeJson(ex, 200, Map.of("ok", true, "channels", list));
+                return;
+            }
+            writeJson(ex, 400, Map.of("ok", false, "error", "Missing query: userId | name | prefix"));
+        } else if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            Map<String,Object> doc = GSON.fromJson(body, MAP_STRING_OBJECT);
+            doc.putIfAbsent("participants", new ArrayList<String>());
+            String id = CloudStore.createChannel(doc);
+            writeJson(ex, 200, Map.of("ok", true, "channelId", id));
+        } else {
+            writeJson(ex, 405, Map.of("ok", false, "error", "Method not allowed"));
+        }
+    } catch (Exception e) {
+        writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+    }
+});
+
 
         // GET /api/messages?channelId=...
         // POST /api/messages {channelId,senderId,content,type?}
-        server.createContext("/api/messages", ex -> {
+        
+// POST /api/channels/join {channelId, userId}
+server.createContext("/api/channels/join", ex -> {
+    if (handleCorsPreflight(ex)) return;
+    try {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            writeJson(ex, 405, Map.of("ok", false, "error", "Method not allowed"));
+            return;
+        }
+        String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        Map<String,Object> req = GSON.fromJson(body, MAP_STRING_OBJECT);
+        String channelId = (String) req.get("channelId");
+        String userId    = (String) req.get("userId");
+        CloudStore.addParticipant(channelId, userId);
+        writeJson(ex, 200, Map.of("ok", true));
+    } catch (Exception e) {
+        writeJson(ex, 500, Map.of("ok", false, "error", String.valueOf(e)));
+    }
+});
+
+server.createContext("/api/messages", ex -> {
             if (handleCorsPreflight(ex)) return;
             try {
                 if ("GET".equalsIgnoreCase(ex.getRequestMethod())) {
@@ -177,7 +216,7 @@ public class App {
         // Start server
         server.setExecutor(null);
         server.start();
-        System.out.println("📡 HTTP API server started on port " + port);
+        System.out.println("📡 HTTP API server started on port " + server.getAddress().getPort());
 
         // CLI flow (kept for local testing)
         System.out.println("=== Welcome to Unified - University Messaging System ===");
@@ -240,7 +279,9 @@ public class App {
         }
     }
 
-    // ===== CLI UI =====
+    
+    
+// ===== CLI UI =====
 
     private static void showLoginMenu() {
         System.out.println("\n=== Login Menu ===");
@@ -432,6 +473,20 @@ public class App {
         channels.put(dm.getChannelId(), dm);
         currentUser.joinChannel(dm.getChannelId());
         other.joinChannel(dm.getChannelId());
+
+// --- persist to Firestore (keep same channelId) ---
+try {
+    Map<String,Object> doc = new LinkedHashMap<>();
+    doc.put("channelId",  dm.getChannelId());
+    doc.put("name",       dm.getChannelName());
+    doc.put("type",       "DIRECT");
+    doc.put("isPrivate",  true);
+    doc.put("ownerId",    currentUser.getUserId());
+    doc.put("participants", List.of(currentUser.getUserId(), other.getUserId()));
+    CloudStore.createChannel(doc);
+} catch (Exception e) {
+    System.err.println("Failed to persist DM to Firestore: " + e);
+}
         System.out.println("Direct message channel created!");
     }
 
@@ -448,6 +503,20 @@ public class App {
                 currentUser.getUserId(), max, priv);
         channels.put(grp.getChannelId(), grp);
         currentUser.joinChannel(grp.getChannelId());
+
+// --- persist to Firestore (keep same channelId) ---
+try {
+    Map<String,Object> doc = new LinkedHashMap<>();
+    doc.put("channelId",  grp.getChannelId());
+    doc.put("name",       grp.getChannelName());
+    doc.put("type",       "GROUP");
+    doc.put("isPrivate",  false);
+    doc.put("ownerId",    currentUser.getUserId());
+    doc.put("participants", List.of(currentUser.getUserId()));
+    CloudStore.createChannel(doc);
+} catch (Exception e) {
+    System.err.println("Failed to persist GROUP to Firestore: " + e);
+}
         System.out.println("Group chat created!");
     }
 
@@ -468,6 +537,23 @@ public class App {
                 currentUser.getUserId(), sem, year, allow);
         channels.put(cc.getChannelId(), cc);
         currentUser.joinChannel(cc.getChannelId());
+
+// --- persist to Firestore (keep same channelId) ---
+try {
+    Map<String,Object> doc = new LinkedHashMap<>();
+    doc.put("channelId",  cc.getChannelId());
+    doc.put("name",       cc.getChannelName());
+    doc.put("type",       "COURSE");
+    doc.put("isPrivate",  false);
+    doc.put("ownerId",    currentUser.getUserId());
+    doc.put("participants", List.of(currentUser.getUserId()));
+    doc.put("courseCode", code);
+    doc.put("semester",   sem);
+    doc.put("year",       year);
+    CloudStore.createChannel(doc);
+} catch (Exception e) {
+    System.err.println("Failed to persist COURSE to Firestore: " + e);
+}
         System.out.println("Course channel created!");
     }
 
@@ -487,9 +573,15 @@ public class App {
         if (choice > 0 && choice <= avail.size()) {
             Channel sel = avail.get(choice - 1);
             if (sel.addParticipant(currentUser.getUserId())) {
-                currentUser.joinChannel(sel.getChannelId());
-                System.out.println("Successfully joined the channel!");
-            } else {
+                
+currentUser.joinChannel(sel.getChannelId());
+try {
+    CloudStore.addParticipant(sel.getChannelId(), currentUser.getUserId());
+} catch (Exception e) {
+    System.err.println("Failed to add participant in Firestore: " + e);
+}
+System.out.println("Successfully joined the channel!");
+} else {
                 System.out.println("Failed to join the channel.");
             }
         }
