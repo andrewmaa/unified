@@ -129,7 +129,7 @@ public final class CloudStore {
             for (QueryDocumentSnapshot d : q2.get().getDocuments())
                 if (out.stream().noneMatch(x -> Objects.equals(x.get("channelId"), d.getId()))) out.add(row(d));
 
-            out.sort((a,b) -> cmpTs(b.get("updatedAt")) - cmpTs(a.get("updatedAt")));
+            out.sort((a,b) -> Long.compare(ts(b.get("updatedAt")), ts(a.get("updatedAt"))));
             return out;
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
@@ -144,19 +144,67 @@ public final class CloudStore {
         Object parts = doc.getOrDefault("participants", new ArrayList<>());
         if (!(parts instanceof List)) parts = new ArrayList<>((Collection<?>) parts);
         @SuppressWarnings("unchecked") List<Object> p = (List<Object>) parts;
+    
         String ownerId = str(doc.get("ownerId"));
-        if (ownerId != null && p.stream().noneMatch(v -> Objects.equals(String.valueOf(v), ownerId))) p.add(ownerId);
-
+        if (ownerId != null && p.stream().noneMatch(v -> Objects.equals(String.valueOf(v), ownerId))) {
+            p.add(ownerId);
+        }
+    
         doc.put("participants", normalizeValue(p));
         doc.putIfAbsent("createdAt", Timestamp.now());
         doc.put("updatedAt", Timestamp.now());
-
+    
+        String forcedId = str(doc.get("channelId")); // 允许外部指定
         try {
-            DocumentReference ref = db.collection("channels").add(normalizeMap(doc)).get();
+            DocumentReference ref = (forcedId != null && !forcedId.isBlank())
+                    ? db.collection("channels").document(forcedId)
+                    : db.collection("channels").document(); // auto id
+            ref.set(normalizeMap(doc)).get();
             return ref.getId();
-        } catch (InterruptedException ie) { Thread.currentThread().interrupt(); throw new RuntimeException(ie); }
-        catch (ExecutionException ee) { throw new RuntimeException(cause(ee)); }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(ie);
+        } catch (ExecutionException ee) {
+            throw new RuntimeException(cause(ee));
+        }
     }
+    public static Map<String,Object> findChannelByExactName(String name){
+        try {
+            var qs = db.collection("channels")
+                    .whereEqualTo("name", name).limit(1).get().get();
+            if (qs.isEmpty()) return null;
+            var d = qs.getDocuments().get(0);
+            return row(d);
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+    
+    public static List<Map<String,Object>> searchChannelsByPrefix(String prefix){
+        try {
+            String end = prefix + "\uf8ff";
+            var qs = db.collection("channels")
+                    .whereGreaterThanOrEqualTo("name", prefix)
+                    .whereLessThan("name", end).get().get();
+            List<Map<String,Object>> out = new ArrayList<>();
+            for (var d : qs.getDocuments()) out.add(row(d));
+            return out;
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+    
+    public static void addParticipant(String channelId, String userId) {
+        try {
+            db.collection("channels").document(channelId)
+              .update("participants", FieldValue.arrayUnion(userId)).get();
+            db.collection("channels").document(channelId)
+              .set(Map.of("updatedAt", Timestamp.now()), SetOptions.merge()).get();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(ie);
+        } catch (ExecutionException ee) {
+            throw new RuntimeException(cause(ee));
+        }
+    }
+    
+    
 
     // ---------- Messages ----------
     public static List<Map<String, Object>> listMessages(String channelId) {
@@ -200,6 +248,13 @@ public final class CloudStore {
             this.ok=ok; this.id=id; this.updateTime=updateTime; this.error=error;
         }
     }
+    private static long ts(Object ts){
+        if (ts instanceof Timestamp) {
+            return ((Timestamp) ts).toSqlTimestamp().getTime();
+        }
+        return 0L;
+    }
+    
     public static final class HealthResult {
         public final boolean ok; public final String id; public final String projectId; public final String error;
         public HealthResult(boolean ok, String id, String projectId, String error) {
