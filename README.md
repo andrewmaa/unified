@@ -95,7 +95,9 @@ unified/
 
 ### Prerequisites
 -JDK 17+ and Maven 3.9+
+
 -macOS / Linux / Windows
+
 -Google Cloud SDK (gcloud) — only required for B1 cloud mode
 
 ### B1. Local CLI with cloud (talks to Firestore)
@@ -104,8 +106,8 @@ Requires IAM on our GCP project unified-468307: a maintainer must grant your Goo
 ### Quick Start
 ```bash
 # 1) Get the code and build
-git clone <this-repo>
-cd unified
+git clone https://github.com/andrewmaa/unified.git
+cd unified #the address of unified in your device(eg./Users/niyubei/Documents/GitHub/unified)
 mvn -DskipTests clean package
 
 # 2) Set up Application Default Credentials (one time)
@@ -124,14 +126,14 @@ If you don’t have GCP access, run offline mode (no Firestore; data resets on r
 
 ### Quick Start
 ```bash
-git clone <this-repo>
-cd unified
+git clone https://github.com/andrewmaa/unified.git
+cd unified #the address of unified in your device(eg./Users/niyubei/Documents/GitHub/unified)
 mvn -DskipTests clean package
 CLOUD_MODE=local PORT=0 java -jar target/app.jar
 ```
-## Note: If your clone doesn’t include support for CLOUD_MODE=local yet, ask a maintainer or use B1.
+#### Note: If your clone doesn’t include support for CLOUD_MODE=local yet, ask a maintainer or use B1.
 ### Troubleshooting
-## Address already in use
+#### Address already in use
 Another process is using your port. Either auto-pick a free port or kill the process:
 ```bash
 # Prefer: let the app pick a free port
@@ -141,7 +143,7 @@ PORT=0 java -jar target/app.jar
 lsof -nP -iTCP:8080 -sTCP:LISTEN
 kill $(lsof -tiTCP:8080 -sTCP:LISTEN)
 ```
-## ADC not found …
+#### ADC not found …
 You’re in cloud mode without credentials. Follow B1 to set up ADC, or use B2 with CLOUD_MODE=local.
 
 ## Usage
