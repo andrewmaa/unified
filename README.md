@@ -94,41 +94,56 @@ unified/
 ## Getting Started
 
 ### Prerequisites
-- Java 11 or higher
-- Maven 3.6 or higher
+-JDK 17+ and Maven 3.9+
+-macOS / Linux / Windows
+-Google Cloud SDK (gcloud) — only required for B1 cloud mode
 
-### Building the Project
+### B1. Local CLI with cloud (talks to Firestore)
+Requires IAM on our GCP project unified-468307: a maintainer must grant your Google account Cloud Datastore User (roles/datastore.user).
 
 ### Quick Start
 ```bash
-# Build the project (fat JAR with all dependencies)
-mvn clean package
+# 1) Get the code and build
+git clone <this-repo>
+cd unified
+mvn -DskipTests clean package
 
-# Run the GUI (Swing)
-java -cp target/unified-messaging-1.0.0-jar-with-dependencies.jar com.unified.client.UnifiedGUI
+# 2) Set up Application Default Credentials (one time)
+gcloud config set project unified-468307
+gcloud auth application-default login
+export FIRESTORE_PROJECT_ID=unified-468307
 
-# Run the CLI (console app)
-java -jar target/unified-messaging-1.0.0-jar-with-dependencies.jar
+# 3) Run the CLI (use a free port to avoid collisions)
+PORT=0 java -jar target/app.jar
+# or
+PORT=0 mvn -DskipTests exec:java -Dexec.mainClass=com.unified.App
 ```
 
-### Using helper scripts (macOS/Linux)
+### B2. Local CLI without credentials (offline, in-memory)
+If you don’t have GCP access, run offline mode (no Firestore; data resets on restart).
+
+### Quick Start
 ```bash
-# Build
-./build.sh
-
-# Run GUI
-./run-gui.sh
-
-# Run CLI
-./run.sh
-
-# If needed, make scripts executable once:
-chmod +x build.sh run.sh run-gui.sh
+git clone <this-repo>
+cd unified
+mvn -DskipTests clean package
+CLOUD_MODE=local PORT=0 java -jar target/app.jar
 ```
+## Note: If your clone doesn’t include support for CLOUD_MODE=local yet, ask a maintainer or use B1.
+### Troubleshooting
+## Address already in use
+Another process is using your port. Either auto-pick a free port or kill the process:
+```bash
+# Prefer: let the app pick a free port
+PORT=0 java -jar target/app.jar
 
-### Notes
-- The packaged JAR defaults to the CLI entry point (`com.unified.App`). To launch the GUI, use the `-cp ... com.unified.client.UnifiedGUI` command or `./run-gui.sh`.
-- Requires Java 11+ and Maven 3.6+.
+# Or find & kill the process holding 8080
+lsof -nP -iTCP:8080 -sTCP:LISTEN
+kill $(lsof -tiTCP:8080 -sTCP:LISTEN)
+```
+## ADC not found …
+You’re in cloud mode without credentials. Follow B1 to set up ADC, or use B2 with CLOUD_MODE=local.
+
 ## Usage
 
 ### First Time Setup
