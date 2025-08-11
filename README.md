@@ -100,28 +100,7 @@ unified/
 
 -Google Cloud SDK (gcloud) — only required for B1 cloud mode
 
-### B1. Local CLI with cloud (talks to Firestore)
-Requires IAM on our GCP project unified-468307: a maintainer must grant your Google account Cloud Datastore User (roles/datastore.user).
-
-### Quick Start
-```bash
-# 1) Get the code and build
-git clone https://github.com/andrewmaa/unified.git
-cd unified #the address of unified in your device(eg./Users/niyubei/Documents/GitHub/unified)
-mvn -DskipTests clean package
-
-# 2) Set up Application Default Credentials (one time)
-gcloud config set project unified-468307
-gcloud auth application-default login
-export FIRESTORE_PROJECT_ID=unified-468307
-
-# 3) Run the CLI (use a free port to avoid collisions)
-PORT=0 java -jar target/app.jar
-# or
-PORT=0 mvn -DskipTests exec:java -Dexec.mainClass=com.unified.App
-```
-
-### B2. Local CLI without credentials (offline, in-memory)
+### B1(recommended). Local CLI without credentials (offline, in-memory)
 If you don’t have GCP access, run offline mode (no Firestore; data resets on restart).
 
 ### Quick Start
@@ -143,8 +122,30 @@ PORT=0 java -jar target/app.jar
 lsof -nP -iTCP:8080 -sTCP:LISTEN
 kill $(lsof -tiTCP:8080 -sTCP:LISTEN)
 ```
+
+### B2. Local CLI with cloud (talks to Firestore)
+Requires IAM on our GCP project unified-468307: a maintainer must grant your Google account Cloud Datastore User (roles/datastore.user).
+
+### Quick Start
+```bash
+# 1) Get the code and build
+git clone https://github.com/andrewmaa/unified.git
+cd unified #the address of unified in your device(eg./Users/niyubei/Documents/GitHub/unified)
+mvn -DskipTests clean package
+
+# 2) Set up Application Default Credentials (one time)
+gcloud config set project unified-468307
+gcloud auth application-default login
+export FIRESTORE_PROJECT_ID=unified-468307
+
+# 3) Run the CLI (use a free port to avoid collisions)
+PORT=0 java -jar target/app.jar
+# or
+PORT=0 mvn -DskipTests exec:java -Dexec.mainClass=com.unified.App
+```
+
 #### ADC not found …
-You’re in cloud mode without credentials. Follow B1 to set up ADC, or use B2 with CLOUD_MODE=local.
+You’re in cloud mode without credentials. Follow B2 to set up ADC, or use B1 with CLOUD_MODE=local.
 
 ## Usage
 
